@@ -71,7 +71,7 @@
 - [ ] Implement Compose camera screen with CameraX preview.
 - [ ] Implement live watermark overlay using domain text builder.
 - [ ] Wire capture button to CameraX `ImageCapture`.
-- [ ] Save captured image placeholder flow and prepare renderer seam.
+- [ ] Save captured image through bitmap watermark rendering and gallery insertion.
 
 ### Task 7: Flavor wiring
 

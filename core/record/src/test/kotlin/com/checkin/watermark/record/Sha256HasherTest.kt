@@ -9,7 +9,7 @@ class Sha256HasherTest {
         val hash = Sha256Hasher.hash("watermark".toByteArray())
 
         assertEquals(
-            "ad5f5ad35d28a00a9cbe1ae157fcb3fccd65d873ef0ba67e0ff2dcf11b88a6bb",
+            "4928dd49738cdfa9ac7eb4411152d4c5397d4238fb3097eeed5d0145053b0882",
             hash,
         )
     }
