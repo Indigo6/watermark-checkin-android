@@ -7,3 +7,4 @@ app/build/
 core/**/build/
 location/**/build/
 .superpowers/
+.worktrees/
