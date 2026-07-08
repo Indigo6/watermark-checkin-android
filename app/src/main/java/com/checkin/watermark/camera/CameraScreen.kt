@@ -1,6 +1,8 @@
 package com.checkin.watermark.camera
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -21,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,13 +39,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.checkin.watermark.domain.Coordinate
 import com.checkin.watermark.domain.LocationSnapshot
+import com.checkin.watermark.domain.LocationSource
 import com.checkin.watermark.domain.WatermarkTemplate
 import com.checkin.watermark.domain.WatermarkTextBuilder
 import com.checkin.watermark.location.DeviceLocationReader
+import com.checkin.watermark.location.ManualLocationStore
 import com.checkin.watermark.location.manual.ManualLocationProvider
 import com.checkin.watermark.location.smart.InMemoryAddressCache
 import com.checkin.watermark.location.smart.ReverseGeocoder
 import com.checkin.watermark.location.smart.SmartLocationResolver
+import com.checkin.watermark.record.CaptureRecordStore
 import com.checkin.watermark.watermark.WatermarkOverlay
 import java.io.File
 import java.time.Instant
@@ -61,22 +67,52 @@ fun CameraScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val imageCapture = remember { ImageCapture.Builder().build() }
-    var manualLocationName by remember { mutableStateOf("点击水印编辑地点") }
+    val manualLocationStore = remember { ManualLocationStore(context) }
+    var manualLocationName by remember {
+        mutableStateOf(manualLocationStore.readLocationName().ifBlank { "点击水印编辑地点" })
+    }
     var editingLocation by remember { mutableStateOf(false) }
     var watermarkLines by remember { mutableStateOf(emptyList<String>()) }
+    var currentLocation by remember {
+        mutableStateOf(
+            LocationSnapshot(
+                displayName = "定位中",
+                coordinate = null,
+                accuracyMeters = null,
+                source = LocationSource.Unavailable,
+            ),
+        )
+    }
+    var lastSavedUri by remember { mutableStateOf<Uri?>(null) }
 
     LaunchedEffect(smartLocationEnabled, manualLocationName) {
-        val fix = DeviceLocationReader(context).readLastKnownLocation()
-        val location = resolvePreviewLocation(
+        val reader = DeviceLocationReader(context)
+        val fix = reader.readLastKnownLocation()
+        currentLocation = resolvePreviewLocation(
             smartLocationEnabled = smartLocationEnabled,
             coordinate = fix?.coordinate,
             accuracyMeters = fix?.accuracyMeters,
             manualLocationName = manualLocationName,
         )
+    }
+
+    DisposableEffect(smartLocationEnabled, manualLocationName) {
+        val subscription = DeviceLocationReader(context).startLocationUpdates { fix ->
+            currentLocation = resolvePreviewLocation(
+                smartLocationEnabled = smartLocationEnabled,
+                coordinate = fix.coordinate,
+                accuracyMeters = fix.accuracyMeters,
+                manualLocationName = manualLocationName,
+            )
+        }
+        onDispose { subscription.stop() }
+    }
+
+    LaunchedEffect(currentLocation) {
         watermarkLines = WatermarkTextBuilder(ZoneId.systemDefault()).build(
             template = WatermarkTemplate.WorkCheckin,
             capturedAt = Instant.now(),
-            location = location,
+            location = currentLocation,
         )
     }
 
@@ -115,7 +151,11 @@ fun CameraScreen(
         )
 
         Button(
-            onClick = { capturePhoto(context, imageCapture, watermarkLines) },
+            onClick = {
+                capturePhoto(context, imageCapture, watermarkLines, currentLocation) { uri ->
+                    lastSavedUri = uri
+                }
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 28.dp)
@@ -125,13 +165,28 @@ fun CameraScreen(
         ) {
             Text("")
         }
+
+        lastSavedUri?.let { uri ->
+            Button(
+                onClick = { sharePhoto(context, uri) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 42.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
+            ) {
+                Text("分享")
+            }
+        }
     }
 
     if (editingLocation) {
         ManualLocationDialog(
             value = manualLocationName,
             onValueChange = { manualLocationName = it },
-            onDismiss = { editingLocation = false },
+            onDismiss = {
+                manualLocationStore.saveLocationName(manualLocationName)
+                editingLocation = false
+            },
         )
     }
 }
@@ -171,6 +226,8 @@ private fun capturePhoto(
     context: Context,
     imageCapture: ImageCapture,
     watermarkLines: List<String>,
+    location: LocationSnapshot,
+    onSaved: (Uri) -> Unit,
 ) {
     val outputFile = File(context.cacheDir, "checkin-${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
@@ -179,8 +236,10 @@ private fun capturePhoto(
         ContextCompat.getMainExecutor(context),
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val saved = PhotoSaver(context).renderWatermarkAndSaveToGallery(outputFile, watermarkLines)
-                val message = if (saved) "水印照片已保存到相册" else "照片保存失败"
+                val saved = PhotoSaver(context).renderWatermarkAndSaveToGallery(outputFile, watermarkLines, location)
+                saved?.record?.let { CaptureRecordStore(context).append(it) }
+                saved?.uri?.let(onSaved)
+                val message = if (saved != null) "水印照片已保存到相册" else "照片保存失败"
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
 
@@ -189,6 +248,18 @@ private fun capturePhoto(
             }
         },
     )
+}
+
+private fun sharePhoto(
+    context: Context,
+    uri: Uri,
+) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "image/jpeg"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "分享水印照片"))
 }
 
 @Composable
