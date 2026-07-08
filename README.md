@@ -31,7 +31,9 @@ Required:
 - Android SDK
 - Android Gradle Plugin compatible Gradle
 
-The current server used for initial scaffolding does not have JDK or Android SDK installed, so full Gradle verification must be run on a configured Android build machine.
+The initial server can run Gradle after installing user-local JDK 17 and Android SDK, but it has limited CPU and memory. Use GitHub Actions or a stronger local machine for APK builds.
+
+GitHub Actions is configured in `.github/workflows/android-ci.yml` to run tests, build both debug APKs, and upload them as workflow artifacts on every push to `main`.
 
 ## Current MVP Behavior
 
