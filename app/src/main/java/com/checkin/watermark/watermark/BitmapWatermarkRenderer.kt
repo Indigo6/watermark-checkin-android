@@ -31,10 +31,10 @@ class BitmapWatermarkRenderer {
             textSize = bodySize
         }
         val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(232, 255, 255, 255)
+            color = Color.argb(242, 255, 255, 255)
         }
         val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(15, 118, 110)
+            color = Color.rgb(16, 185, 129)
         }
 
         val textWidth = lines.maxOfOrNull { line ->
@@ -57,6 +57,9 @@ class BitmapWatermarkRenderer {
         var baseline = top + padding + titleSize
         lines.forEachIndexed { index, line ->
             val paint = if (index == 0) titlePaint else bodyPaint
+            if (index == 0) {
+                paint.color = Color.rgb(6, 95, 70)
+            }
             canvas.drawText(line, left + padding + 8f * scale, baseline, paint)
             baseline += (if (index == 0) titleSize else bodySize) + lineGap
         }

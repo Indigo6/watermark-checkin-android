@@ -5,20 +5,30 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +55,7 @@ import com.checkin.watermark.domain.WatermarkTextBuilder
 import com.checkin.watermark.location.DeviceLocationReader
 import com.checkin.watermark.location.ManualLocationStore
 import com.checkin.watermark.location.manual.ManualLocationProvider
+import com.checkin.watermark.location.manual.ManualWorkLocationBook
 import com.checkin.watermark.location.smart.InMemoryAddressCache
 import com.checkin.watermark.location.smart.ReverseGeocoder
 import com.checkin.watermark.location.smart.SmartLocationResolver
@@ -66,10 +77,18 @@ fun CameraScreen(
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .build()
+    }
     val manualLocationStore = remember { ManualLocationStore(context) }
-    var manualLocationName by remember {
-        mutableStateOf(manualLocationStore.readLocationName().ifBlank { "点击水印编辑地点" })
+    var manualLocationBook by remember {
+        mutableStateOf(
+            manualLocationStore.readBook().let { book ->
+                if (book.locations.isEmpty()) book.add("点击水印添加地点") else book
+            },
+        )
     }
     var editingLocation by remember { mutableStateOf(false) }
     var watermarkLines by remember { mutableStateOf(emptyList<String>()) }
@@ -84,6 +103,8 @@ fun CameraScreen(
         )
     }
     var lastSavedUri by remember { mutableStateOf<Uri?>(null) }
+
+    val manualLocationName = manualLocationBook.selectedLocation()?.name ?: "点击水印添加地点"
 
     LaunchedEffect(smartLocationEnabled, manualLocationName) {
         val reader = DeviceLocationReader(context)
@@ -110,45 +131,77 @@ fun CameraScreen(
 
     LaunchedEffect(currentLocation) {
         watermarkLines = WatermarkTextBuilder(ZoneId.systemDefault()).build(
-            template = WatermarkTemplate.WorkCheckin,
+            template = WatermarkTemplate.EvidenceCheckin,
             capturedAt = Instant.now(),
             location = currentLocation,
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-                PreviewView(viewContext).also { previewView ->
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(viewContext)
-                    cameraProviderFuture.addListener(
-                        {
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageCapture,
-                            )
-                        },
-                        ContextCompat.getMainExecutor(viewContext),
-                    )
-                }
-            },
-        )
-
-        WatermarkOverlay(
-            lines = watermarkLines,
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF111827)),
+    ) {
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 16.dp, bottom = 120.dp),
-            onClick = if (smartLocationEnabled) null else ({ editingLocation = true }),
-        )
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f)
+                .background(Color.Black),
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { viewContext ->
+                    PreviewView(viewContext).also { previewView ->
+                        previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(viewContext)
+                        cameraProviderFuture.addListener(
+                            {
+                                val cameraProvider = cameraProviderFuture.get()
+                                val preview = Preview.Builder()
+                                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                                    .build()
+                                    .also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
+                                cameraProvider.unbindAll()
+                                previewView.post {
+                                    val viewPort = previewView.viewPort
+                                    if (viewPort == null) {
+                                        cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            preview,
+                                            imageCapture,
+                                        )
+                                    } else {
+                                        val useCaseGroup = UseCaseGroup.Builder()
+                                            .setViewPort(viewPort)
+                                            .addUseCase(preview)
+                                            .addUseCase(imageCapture)
+                                            .build()
+                                        cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            useCaseGroup,
+                                        )
+                                    }
+                                }
+                            },
+                            ContextCompat.getMainExecutor(viewContext),
+                        )
+                    }
+                },
+            )
+
+            WatermarkOverlay(
+                lines = watermarkLines,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 14.dp, end = 14.dp, bottom = 24.dp),
+                onClick = if (smartLocationEnabled) null else ({ editingLocation = true }),
+            )
+        }
 
         Button(
             onClick = {
@@ -167,24 +220,42 @@ fun CameraScreen(
         }
 
         lastSavedUri?.let { uri ->
-            Button(
-                onClick = { sharePhoto(context, uri) },
+            Card(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 42.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
+                    .padding(end = 16.dp, bottom = 36.dp)
+                    .size(width = 86.dp, height = 72.dp)
+                    .clickable { sharePhoto(context, uri) },
+                colors = CardDefaults.cardColors(containerColor = Color.White),
             ) {
-                Text("分享")
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 46.dp, height = 34.dp)
+                                .background(Color(0xFFE7F6F4)),
+                        )
+                        Text("分享", color = Color(0xFF0F766E))
+                    }
+                }
             }
         }
     }
 
     if (editingLocation) {
         ManualLocationDialog(
-            value = manualLocationName,
-            onValueChange = { manualLocationName = it },
+            book = manualLocationBook,
+            onBookChange = {
+                manualLocationBook = it
+                manualLocationStore.saveBook(it)
+            },
             onDismiss = {
-                manualLocationStore.saveLocationName(manualLocationName)
+                manualLocationStore.saveBook(manualLocationBook)
                 editingLocation = false
             },
         )
@@ -264,24 +335,69 @@ private fun sharePhoto(
 
 @Composable
 private fun ManualLocationDialog(
-    value: String,
-    onValueChange: (String) -> Unit,
+    book: ManualWorkLocationBook,
+    onBookChange: (ManualWorkLocationBook) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var newLocationName by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("编辑地点") },
+        title = { Text("工作地点") },
         text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                label = { Text("水印地点") },
-                singleLine = false,
-            )
+            Column {
+                book.locations.forEach { location ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .clickable { onBookChange(book.select(location.id)) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (book.selectedLocation()?.id == location.id) {
+                                Color(0xFFE7F6F4)
+                            } else {
+                                Color(0xFFF8FAFC)
+                            },
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = location.name,
+                                modifier = Modifier.weight(1f),
+                                color = Color(0xFF17212B),
+                            )
+                            TextButton(onClick = { onBookChange(book.select(location.id).deleteSelected()) }) {
+                                Text("删除")
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = newLocationName,
+                    onValueChange = { newLocationName = it },
+                    label = { Text("新增工作地点") },
+                    singleLine = true,
+                    modifier = Modifier.widthIn(min = 260.dp),
+                )
+            }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    if (newLocationName.isNotBlank()) {
+                        onBookChange(book.add(newLocationName).selectByName(newLocationName))
+                    }
+                    onDismiss()
+                },
+            ) {
                 Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
             }
         },
     )
