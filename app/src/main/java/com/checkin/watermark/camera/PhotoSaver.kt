@@ -16,6 +16,8 @@ import com.checkin.watermark.watermark.BitmapWatermarkRenderer
 import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 class PhotoSaver(
     private val context: Context,
@@ -23,8 +25,11 @@ class PhotoSaver(
 ) {
     data class SavedPhoto(
         val uri: Uri?,
+        val displayName: String,
         val record: CaptureRecord,
     )
+
+    private val displayNameFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
 
     fun renderWatermarkAndSaveToGallery(
         sourceFile: File,
@@ -35,7 +40,8 @@ class PhotoSaver(
         val decodedBitmap = BitmapFactory.decodeByteArray(originalBytes, 0, originalBytes.size) ?: return null
         val sourceBitmap = rotateBitmapIfNeeded(decodedBitmap, sourceFile)
         val outputBitmap = renderer.render(sourceBitmap, watermarkLines)
-        val displayName = "watermark-checkin-${System.currentTimeMillis()}.jpg"
+        val nowMillis = System.currentTimeMillis()
+        val displayName = "IMG_${displayNameFormatter.format(LocalDateTime.now())}.jpg"
         val outputBytesFile = File(context.cacheDir, "watermarked-${System.currentTimeMillis()}.jpg")
         FileOutputStream(outputBytesFile).use {
             outputBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 94, it)
@@ -51,7 +57,9 @@ class PhotoSaver(
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Images.Media.TITLE, displayName.removeSuffix(".jpg"))
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.DATE_TAKEN, nowMillis)
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/WatermarkCheckin")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
@@ -63,18 +71,20 @@ class PhotoSaver(
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             context.contentResolver.update(uri, values, null, null)
-            SavedPhoto(uri = uri, record = record)
+            SavedPhoto(uri = uri, displayName = displayName, record = record)
         } else {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Images.Media.TITLE, displayName.removeSuffix(".jpg"))
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.DATE_TAKEN, nowMillis)
             }
             val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: return null
             context.contentResolver.openOutputStream(uri)?.use { stream ->
                 stream.write(outputBytes)
             } ?: return null
-            SavedPhoto(uri = uri, record = record)
+            SavedPhoto(uri = uri, displayName = displayName, record = record)
         }
     }
 

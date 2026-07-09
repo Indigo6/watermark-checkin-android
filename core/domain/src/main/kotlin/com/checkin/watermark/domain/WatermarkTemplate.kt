@@ -3,6 +3,7 @@ package com.checkin.watermark.domain
 enum class WatermarkTemplate(
     val title: String,
 ) {
+    MinimalCamera(""),
     SimpleCheckin("简洁打卡"),
     EvidenceCheckin("证据打卡"),
     WorkCheckin("工作打卡"),

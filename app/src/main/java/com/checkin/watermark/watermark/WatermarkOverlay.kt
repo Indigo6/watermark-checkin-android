@@ -1,7 +1,5 @@
 package com.checkin.watermark.watermark
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +10,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,20 +26,25 @@ fun WatermarkOverlay(
     Column(
         modifier = modifier
             .widthIn(max = 360.dp)
-            .background(Color(0xF2FFFFFF))
-            .border(width = 3.dp, color = Color(0xFF10B981))
             .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
     ) {
         lines.forEachIndexed { index, line ->
-            if (index == 1) {
+            if (index > 0) {
                 Spacer(Modifier.height(3.dp))
             }
             Text(
                 text = line,
-                color = if (index == 0) Color(0xFF065F46) else Color(0xFF17212B),
-                fontSize = if (index == 0) 17.sp else 13.sp,
-                fontWeight = if (index == 0) FontWeight.Bold else FontWeight.Normal,
+                color = Color.White,
+                fontSize = if (index == 0) 17.sp else 14.sp,
+                fontWeight = if (index == 0) FontWeight.SemiBold else FontWeight.Medium,
+                style = TextStyle(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.72f),
+                        offset = Offset(x = 1.5f, y = 1.5f),
+                        blurRadius = 4f,
+                    ),
+                ),
             )
         }
     }

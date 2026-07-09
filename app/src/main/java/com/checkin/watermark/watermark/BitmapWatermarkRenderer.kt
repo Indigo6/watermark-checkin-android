@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import kotlin.math.max
 
 class BitmapWatermarkRenderer {
@@ -16,54 +15,49 @@ class BitmapWatermarkRenderer {
         val canvas = Canvas(output)
         val scale = max(1f, output.width / 1080f)
         val margin = 24f * scale
-        val padding = 18f * scale
-        val titleSize = 36f * scale
-        val bodySize = 28f * scale
-        val lineGap = 12f * scale
+        val titleSize = 38f * scale
+        val bodySize = 30f * scale
+        val lineGap = 10f * scale
+        val textLeft = margin
+        val maxTextWidth = output.width - margin * 2
 
         val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(23, 33, 43)
+            color = Color.WHITE
             textSize = titleSize
             typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setShadowLayer(5f * scale, 2f * scale, 2f * scale, Color.argb(190, 0, 0, 0))
         }
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(23, 33, 43)
+            color = Color.WHITE
             textSize = bodySize
-        }
-        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(242, 255, 255, 255)
-        }
-        val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(16, 185, 129)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setShadowLayer(5f * scale, 2f * scale, 2f * scale, Color.argb(190, 0, 0, 0))
         }
 
-        val textWidth = lines.maxOfOrNull { line ->
-            val paint = if (lines.indexOf(line) == 0) titlePaint else bodyPaint
-            paint.measureText(line)
-        } ?: 0f
-        val textHeight = lines.mapIndexed { index, _ ->
+        val fittedLines = lines.mapIndexed { index, line ->
+            val paint = if (index == 0) titlePaint else bodyPaint
+            line.fitToWidth(paint, maxTextWidth)
+        }
+        val textHeight = fittedLines.mapIndexed { index, _ ->
             if (index == 0) titleSize else bodySize
         }.sum() + lineGap * (lines.size - 1).coerceAtLeast(0)
 
-        val width = (textWidth + padding * 2).coerceAtMost(output.width - margin * 2)
-        val height = textHeight + padding * 2
-        val left = margin
-        val top = output.height - margin - height
-        val rect = RectF(left, top, left + width, top + height)
-
-        canvas.drawRoundRect(rect, 8f * scale, 8f * scale, backgroundPaint)
-        canvas.drawRect(left, top, left + 8f * scale, top + height, accentPaint)
-
-        var baseline = top + padding + titleSize
-        lines.forEachIndexed { index, line ->
+        var baseline = output.height - margin - textHeight + titleSize
+        fittedLines.forEachIndexed { index, line ->
             val paint = if (index == 0) titlePaint else bodyPaint
-            if (index == 0) {
-                paint.color = Color.rgb(6, 95, 70)
-            }
-            canvas.drawText(line, left + padding + 8f * scale, baseline, paint)
+            canvas.drawText(line, textLeft, baseline, paint)
             baseline += (if (index == 0) titleSize else bodySize) + lineGap
         }
 
         return output
+    }
+
+    private fun String.fitToWidth(paint: Paint, maxWidth: Float): String {
+        if (paint.measureText(this) <= maxWidth) return this
+        var end = length
+        while (end > 1 && paint.measureText(take(end) + "...") > maxWidth) {
+            end--
+        }
+        return take(end) + "..."
     }
 }

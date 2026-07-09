@@ -1,5 +1,6 @@
 package com.checkin.watermark.camera
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -13,6 +14,7 @@ import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -44,7 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.checkin.watermark.domain.Coordinate
@@ -64,6 +67,7 @@ import com.checkin.watermark.watermark.WatermarkOverlay
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 
 @Composable
 fun CameraScreen(
@@ -92,6 +96,7 @@ fun CameraScreen(
     }
     var editingLocation by remember { mutableStateOf(false) }
     var watermarkLines by remember { mutableStateOf(emptyList<String>()) }
+    var capturedAt by remember { mutableStateOf(Instant.now()) }
     var currentLocation by remember {
         mutableStateOf(
             LocationSnapshot(
@@ -102,9 +107,16 @@ fun CameraScreen(
             ),
         )
     }
-    var lastSavedUri by remember { mutableStateOf<Uri?>(null) }
+    var lastSavedPhoto by remember { mutableStateOf<PhotoSaver.SavedPhoto?>(null) }
 
     val manualLocationName = manualLocationBook.selectedLocation()?.name ?: "点击水印添加地点"
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            capturedAt = Instant.now()
+            delay(1000L)
+        }
+    }
 
     LaunchedEffect(smartLocationEnabled, manualLocationName) {
         val reader = DeviceLocationReader(context)
@@ -129,10 +141,10 @@ fun CameraScreen(
         onDispose { subscription.stop() }
     }
 
-    LaunchedEffect(currentLocation) {
+    LaunchedEffect(currentLocation, capturedAt) {
         watermarkLines = WatermarkTextBuilder(ZoneId.systemDefault()).build(
-            template = WatermarkTemplate.EvidenceCheckin,
-            capturedAt = Instant.now(),
+            template = WatermarkTemplate.MinimalCamera,
+            capturedAt = capturedAt,
             location = currentLocation,
         )
     }
@@ -203,45 +215,47 @@ fun CameraScreen(
             )
         }
 
-        Button(
-            onClick = {
-                capturePhoto(context, imageCapture, watermarkLines, currentLocation) { uri ->
-                    lastSavedUri = uri
-                }
-            },
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 28.dp)
-                .size(76.dp),
-            shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.72f)),
-        ) {
-            Text("")
-        }
+                .size(76.dp)
+                .border(width = 6.dp, color = Color.White, shape = CircleShape)
+                .clickable {
+                    capturePhoto(context, imageCapture, watermarkLines, currentLocation) { saved ->
+                        lastSavedPhoto = saved
+                    }
+                },
+        )
 
-        lastSavedUri?.let { uri ->
+        lastSavedPhoto?.let { photo ->
             Card(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 36.dp)
-                    .size(width = 86.dp, height = 72.dp)
-                    .clickable { sharePhoto(context, uri) },
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, bottom = 36.dp)
+                    .size(width = 104.dp, height = 78.dp)
+                    .clickable { photo.uri?.let { sharePhoto(context, it, photo.displayName) } },
+                shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(8.dp),
-                    contentAlignment = Alignment.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 46.dp, height = 34.dp)
-                                .background(Color(0xFFE7F6F4)),
-                        )
-                        Text("分享", color = Color(0xFF0F766E))
-                    }
+                    Box(
+                        modifier = Modifier
+                            .size(width = 48.dp, height = 34.dp)
+                            .background(Color(0xFFE7F6F4), RoundedCornerShape(4.dp)),
+                    )
+                    Text(
+                        text = photo.displayName,
+                        color = Color(0xFF17212B),
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -298,7 +312,7 @@ private fun capturePhoto(
     imageCapture: ImageCapture,
     watermarkLines: List<String>,
     location: LocationSnapshot,
-    onSaved: (Uri) -> Unit,
+    onSaved: (PhotoSaver.SavedPhoto) -> Unit,
 ) {
     val outputFile = File(context.cacheDir, "checkin-${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
@@ -309,7 +323,7 @@ private fun capturePhoto(
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 val saved = PhotoSaver(context).renderWatermarkAndSaveToGallery(outputFile, watermarkLines, location)
                 saved?.record?.let { CaptureRecordStore(context).append(it) }
-                saved?.uri?.let(onSaved)
+                saved?.let(onSaved)
                 val message = if (saved != null) "水印照片已保存到相册" else "照片保存失败"
                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
@@ -324,10 +338,14 @@ private fun capturePhoto(
 private fun sharePhoto(
     context: Context,
     uri: Uri,
+    displayName: String,
 ) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "image/jpeg"
+        clipData = ClipData.newUri(context.contentResolver, displayName, uri)
         putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TITLE, displayName)
+        putExtra(Intent.EXTRA_SUBJECT, displayName)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, "分享水印照片"))
