@@ -12,9 +12,10 @@ class BitmapWatermarkRenderer {
         lines: List<String>,
     ): Bitmap {
         val output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        if (lines.isEmpty()) return output
         val canvas = Canvas(output)
         val scale = max(1f, output.width / 1080f)
-        val margin = 24f * scale
+        val margin = 56f * scale
         val titleSize = 56f * scale
         val bodySize = 44f * scale
         val lineGap = 14f * scale
@@ -38,15 +39,20 @@ class BitmapWatermarkRenderer {
             val paint = if (index == 0) titlePaint else bodyPaint
             line.fitToWidth(paint, maxTextWidth)
         }
-        val textHeight = fittedLines.mapIndexed { index, _ ->
-            if (index == 0) titleSize else bodySize
-        }.sum() + lineGap * (lines.size - 1).coerceAtLeast(0)
+        val lineMetrics = fittedLines.mapIndexed { index, _ ->
+            val paint = if (index == 0) titlePaint else bodyPaint
+            paint.fontMetrics
+        }
+        val textHeight = lineMetrics.sumOf { metrics ->
+            (metrics.descent - metrics.ascent).toDouble()
+        }.toFloat() + lineGap * (lines.size - 1).coerceAtLeast(0)
 
-        var baseline = output.height - margin - textHeight + titleSize
+        var baseline = output.height - margin - textHeight - lineMetrics.first().ascent
         fittedLines.forEachIndexed { index, line ->
             val paint = if (index == 0) titlePaint else bodyPaint
             canvas.drawText(line, textLeft, baseline, paint)
-            baseline += (if (index == 0) titleSize else bodySize) + lineGap
+            val metrics = lineMetrics[index]
+            baseline += (metrics.descent - metrics.ascent) + lineGap
         }
 
         return output
