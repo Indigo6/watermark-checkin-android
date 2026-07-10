@@ -3,8 +3,11 @@ package com.checkin.watermark.camera
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.ImageCapture
@@ -43,8 +46,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +74,8 @@ import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CameraScreen(
@@ -108,6 +116,7 @@ fun CameraScreen(
         )
     }
     var lastSavedPhoto by remember { mutableStateOf<PhotoSaver.SavedPhoto?>(null) }
+    var lastSavedThumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val manualLocationName = manualLocationBook.selectedLocation()?.name ?: "点击水印添加地点"
 
@@ -147,6 +156,12 @@ fun CameraScreen(
             capturedAt = capturedAt,
             location = currentLocation,
         )
+    }
+
+    LaunchedEffect(lastSavedPhoto?.uri) {
+        lastSavedThumbnail = lastSavedPhoto?.uri?.let { uri ->
+            loadThumbnail(context, uri, maxSize = 360)?.asImageBitmap()
+        }
     }
 
     Box(
@@ -244,11 +259,23 @@ fun CameraScreen(
                         .padding(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = 48.dp, height = 34.dp)
-                            .background(Color(0xFFE7F6F4), RoundedCornerShape(4.dp)),
-                    )
+                    val thumbnail = lastSavedThumbnail
+                    if (thumbnail == null) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 48.dp, height = 34.dp)
+                                .background(Color(0xFFE7F6F4), RoundedCornerShape(4.dp)),
+                        )
+                    } else {
+                        Image(
+                            bitmap = thumbnail,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(width = 48.dp, height = 34.dp)
+                                .background(Color(0xFFE7F6F4), RoundedCornerShape(4.dp)),
+                        )
+                    }
                     Text(
                         text = photo.displayName,
                         color = Color(0xFF17212B),
@@ -273,6 +300,31 @@ fun CameraScreen(
                 editingLocation = false
             },
         )
+    }
+}
+
+private suspend fun loadThumbnail(
+    context: Context,
+    uri: Uri,
+    maxSize: Int,
+): Bitmap? = withContext(Dispatchers.IO) {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { stream ->
+        BitmapFactory.decodeStream(stream, null, bounds)
+    }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > maxSize || bounds.outHeight / sampleSize > maxSize) {
+        sampleSize *= 2
+    }
+
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = Bitmap.Config.RGB_565
+    }
+    context.contentResolver.openInputStream(uri)?.use { stream ->
+        BitmapFactory.decodeStream(stream, null, options)
     }
 }
 

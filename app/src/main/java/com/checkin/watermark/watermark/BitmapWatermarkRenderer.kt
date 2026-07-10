@@ -15,9 +15,9 @@ class BitmapWatermarkRenderer {
         val canvas = Canvas(output)
         val scale = max(1f, output.width / 1080f)
         val margin = 24f * scale
-        val titleSize = 38f * scale
-        val bodySize = 30f * scale
-        val lineGap = 10f * scale
+        val titleSize = 56f * scale
+        val bodySize = 44f * scale
+        val lineGap = 14f * scale
         val textLeft = margin
         val maxTextWidth = output.width - margin * 2
 
