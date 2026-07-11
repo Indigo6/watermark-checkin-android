@@ -1,56 +1,56 @@
-# Watermark Check-in Android
+# 水印打卡相机 Android 版
 
-Android watermark camera app for field check-ins.
+一款用于外勤打卡的 Android 水印相机应用。
 
-## Variants
+## 应用版本
 
-This repository builds two apps from one codebase:
+本仓库通过同一套代码构建两个应用版本：
 
-- `manual`: manual location text, no Internet permission, no map SDK.
-- `smart`: smart location path, with Internet permission and a backend reverse-geocoding extension point.
+- `manual`：手动填写位置文字，不申请网络权限，也不集成地图 SDK。
+- `smart`：支持智能定位流程，申请网络权限，并预留后端逆地理编码扩展接口。
 
-## Build Commands
+## 构建命令
 
 ```bash
 ./gradlew :app:assembleManualDebug
 ./gradlew :app:assembleSmartDebug
 ```
 
-Release variants:
+构建发布版本：
 
 ```bash
 ./gradlew :app:assembleManualRelease
 ./gradlew :app:assembleSmartRelease
 ```
 
-## Environment
+## 环境要求
 
-Required:
+必需环境：
 
 - JDK 17
 - Android SDK
-- Android Gradle Plugin compatible Gradle
+- 与 Android Gradle Plugin 兼容的 Gradle
 
-The initial server can run Gradle after installing user-local JDK 17 and Android SDK, but it has limited CPU and memory. Use GitHub Actions or a stronger local machine for APK builds.
+初始服务器安装用户级 JDK 17 和 Android SDK 后可以运行 Gradle，但 CPU 和内存资源有限。建议使用 GitHub Actions 或性能更强的本地计算机来构建 APK。
 
-GitHub Actions is configured in `.github/workflows/android-ci.yml` to run tests, build both debug APKs, and upload them as workflow artifacts on every push to `main`.
+GitHub Actions 已在 `.github/workflows/android-ci.yml` 中配置。每次向 `main` 分支推送代码时，它都会运行测试、构建两个版本的调试 APK，并将其作为工作流构建产物上传。
 
-## Current MVP Behavior
+## 当前 MVP 功能
 
-- Opens directly to a CameraX preview after camera permission is granted.
-- Shows a live watermark overlay.
-- Manual flavor lets the worker tap the watermark and edit the location text.
-- Capture writes the camera image to cache, renders the watermark into the bitmap, and saves the result to the gallery.
-- Shared domain logic covers watermark text generation, coordinates, source metadata, and location resolution.
-- Smart flavor currently contains the local matching/cache/backend abstraction. A real backend endpoint still needs to be wired.
+- 获得相机权限后，直接打开 CameraX 预览界面。
+- 实时显示水印叠加层。
+- 在手动版中，工作人员可以点击水印并编辑位置文字。
+- 拍照时先将相机图像写入缓存，再把水印渲染到位图中，最后将成片保存到相册。
+- 共享领域逻辑涵盖水印文字生成、坐标、来源元数据和位置解析。
+- 智能版目前已包含本地匹配、缓存和后端抽象，仍需接入真实的后端接口。
 
-## Smart Location Strategy
+## 智能定位策略
 
-The smart flavor should resolve display location in this order:
+智能版应按以下顺序解析用于显示的位置：
 
-1. Configured local check-in site near the GPS coordinate.
-2. Cached address near the GPS coordinate.
-3. Backend reverse-geocoding proxy.
-4. Coordinate fallback.
+1. GPS 坐标附近已配置的本地打卡地点。
+2. GPS 坐标附近的缓存地址。
+3. 后端逆地理编码代理。
+4. 使用坐标作为兜底显示内容。
 
-Do not put map provider keys directly in the Android app.
+请勿将地图服务商的密钥直接写入 Android 应用。
